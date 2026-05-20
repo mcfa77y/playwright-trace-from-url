@@ -19,6 +19,7 @@
 		"cli-progress": "^3.12.0",
 		"commander": "^14.0.3",
 		"conf": "^15.1.0",
+		"dayjs": "^1.11.20",
 		"figlet": "^1.11.0",
 		"ora": "^9.4.0",
 		"unzipper": "^0.12.3"

@@ -1,15 +1,52 @@
 import { spawn } from "node:child_process";
-import os from "node:os";
+import fs from "node:fs";
 import path from "node:path";
+import dayjs from "dayjs";
+import duration from "dayjs/plugin/duration";
 import { addToHistory } from "./utils/config.js";
-import { cleanup, ensureDir, extractZip } from "./utils/file.js";
+import {
+	cleanup,
+	ensureDir,
+	extractZip,
+	getDirStats,
+	listDirs,
+} from "./utils/file.js";
 import { downloadArtifact, parseGithubUrl } from "./utils/github.js";
 import { createSpinner, logger } from "./utils/logger.js";
 
+dayjs.extend(duration);
+
+const TRACES_DIR = path.join(process.cwd(), ".traces");
+
+const runCleanup = async () => {
+	const dirs = listDirs(TRACES_DIR);
+	const now = dayjs();
+	let deletedCount = 0;
+
+	for (const dirName of dirs) {
+		const dirPath = path.join(TRACES_DIR, dirName);
+		const stats = getDirStats(dirPath);
+		const createdAt = dayjs(stats.birthtime);
+
+		if (now.diff(createdAt, "day") >= 1) {
+			cleanup(dirPath);
+			deletedCount++;
+		}
+	}
+
+	if (deletedCount > 0) {
+		logger.info(`Cleaned up ${deletedCount} trace(s) older than 1 day.`);
+	}
+};
+
 export const run = async (url: string) => {
-	const tempDir = path.join(os.tmpdir(), `playwright-trace-${Date.now()}`);
-	const downloadDir = path.join(tempDir, "download");
-	const extractDir = path.join(tempDir, "report");
+	// Run cleanup on start
+	await runCleanup();
+
+	const traceId = `trace-${dayjs().format("YYYYMMDD-HHmmss")}`;
+	const currentTraceDir = path.join(TRACES_DIR, traceId);
+	const downloadDir = path.join(currentTraceDir, "download");
+	const extractDir = path.join(currentTraceDir, "report");
 
 	ensureDir(downloadDir);
 	ensureDir(extractDir);
@@ -40,7 +77,8 @@ export const run = async (url: string) => {
 		}
 
 		logger.info("Starting Playwright report viewer...");
-		logger.dim("Press Ctrl+C to stop and cleanup.");
+		logger.dim("The trace is saved locally and will be kept for 24 hours.");
+		logger.dim(`Path: ${extractDir}`);
 
 		// Run playwright show-report
 		const child = spawn("npx", ["playwright", "show-report", extractDir], {
@@ -49,25 +87,22 @@ export const run = async (url: string) => {
 		});
 
 		return new Promise<void>((resolve, reject) => {
-			child.on("close", (code) => {
-				cleanup(tempDir);
+			child.on("close", () => {
+				// We no longer cleanup here
 				resolve();
 			});
 
 			child.on("error", (err) => {
-				cleanup(tempDir);
 				reject(err);
 			});
 
-			// Handle process termination to ensure cleanup
+			// Handle process termination
 			process.on("SIGINT", () => {
 				child.kill();
-				cleanup(tempDir);
 				process.exit(0);
 			});
 		});
 	} catch (error) {
-		cleanup(tempDir);
 		if (error instanceof Error) {
 			logger.error(error.message);
 		} else {

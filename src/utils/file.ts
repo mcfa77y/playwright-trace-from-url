@@ -23,3 +23,15 @@ export const extractZip = async (zipPath: string, destDir: string) => {
 export const isZipFile = (filePath: string) => {
 	return filePath.endsWith(".zip");
 };
+
+export const listDirs = (dir: string) => {
+	if (!fs.existsSync(dir)) return [];
+	return fs
+		.readdirSync(dir, { withFileTypes: true })
+		.filter((dirent) => dirent.isDirectory())
+		.map((dirent) => dirent.name);
+};
+
+export const getDirStats = (dirPath: string) => {
+	return fs.statSync(dirPath);
+};
