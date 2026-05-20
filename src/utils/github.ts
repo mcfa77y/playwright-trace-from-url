@@ -1,4 +1,8 @@
 import { execSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import axios from "axios";
+import * as cliProgress from "cli-progress";
 import { logger } from "./logger.js";
 
 export interface GithubArtifactInfo {
@@ -26,28 +30,73 @@ export const parseGithubUrl = (url: string): GithubArtifactInfo => {
 	return { owner, repo, runId, artifactId };
 };
 
-export const downloadArtifact = (info: GithubArtifactInfo, destDir: string) => {
+export const downloadArtifact = async (
+	info: GithubArtifactInfo,
+	destDir: string,
+) => {
 	const repoFull = `${info.owner}/${info.repo}`;
 	try {
-		// We can use gh api to get the download URL or gh run download if we knew the name.
-		// However, gh api /repos/:owner/:repo/actions/artifacts/:artifact_id/zip is easiest.
-		// But gh run download --id is not a thing.
-		// Wait, gh run download [run-id] -n [name] works.
+		// Get artifact metadata
+		const metadata = JSON.parse(
+			execSync(
+				`gh api repos/${repoFull}/actions/artifacts/${info.artifactId}`,
+				{
+					encoding: "utf8",
+				},
+			),
+		);
 
-		// Let's first get the artifact name using the ID
-		const artifactName = execSync(
-			`gh api repos/${repoFull}/actions/artifacts/${info.artifactId} --template '{{.name}}'`,
-			{ encoding: "utf8" },
-		).trim();
+		const artifactName = metadata.name;
+		const downloadUrl = metadata.archive_download_url;
+
+		// Get the token from gh cli
+		const token = execSync("gh auth token", { encoding: "utf8" }).trim();
 
 		logger.info(`Downloading artifact: ${artifactName}...`);
 
-		execSync(
-			`gh run download ${info.runId} -n "${artifactName}" -R ${repoFull} -D "${destDir}"`,
-			{ stdio: "inherit" },
+		const progressBar = new cliProgress.SingleBar(
+			{
+				format: "Downloading | {bar} | {percentage}% | {value}/{total} Chunks",
+				barCompleteChar: "\u2588",
+				barIncompleteChar: "\u2591",
+				hideCursor: true,
+			},
+			cliProgress.Presets.shades_classic,
 		);
 
-		return artifactName;
+		const response = await axios({
+			url: downloadUrl,
+			method: "GET",
+			responseType: "stream",
+			headers: {
+				Authorization: `Bearer ${token}`,
+			},
+		});
+
+		const totalLength = Number.parseInt(response.headers["content-length"], 10);
+		progressBar.start(totalLength || 100, 0);
+
+		const zipPath = path.join(destDir, `${artifactName}.zip`);
+		const writer = fs.createWriteStream(zipPath);
+
+		let downloadedLength = 0;
+		response.data.on("data", (chunk: Buffer) => {
+			downloadedLength += chunk.length;
+			progressBar.update(downloadedLength);
+		});
+
+		response.data.pipe(writer);
+
+		return new Promise<string>((resolve, reject) => {
+			writer.on("finish", () => {
+				progressBar.stop();
+				resolve(zipPath);
+			});
+			writer.on("error", (err) => {
+				progressBar.stop();
+				reject(err);
+			});
+		});
 	} catch (error) {
 		if (error instanceof Error) {
 			throw new Error(`Failed to download artifact: ${error.message}`);

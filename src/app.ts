@@ -2,13 +2,17 @@ import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { addToHistory } from "./utils/config.js";
-import { cleanup, ensureDir } from "./utils/file.js";
+import { cleanup, ensureDir, extractZip } from "./utils/file.js";
 import { downloadArtifact, parseGithubUrl } from "./utils/github.js";
 import { createSpinner, logger } from "./utils/logger.js";
 
 export const run = async (url: string) => {
 	const tempDir = path.join(os.tmpdir(), `playwright-trace-${Date.now()}`);
-	ensureDir(tempDir);
+	const downloadDir = path.join(tempDir, "download");
+	const extractDir = path.join(tempDir, "report");
+
+	ensureDir(downloadDir);
+	ensureDir(extractDir);
 
 	try {
 		addToHistory(url);
@@ -16,11 +20,22 @@ export const run = async (url: string) => {
 
 		const spinner = createSpinner("Fetching artifact info...").start();
 
+		let zipPath: string;
 		try {
-			downloadArtifact(info, tempDir);
-			spinner.succeed("Artifact downloaded.");
+			spinner.stop(); // Stop spinner to let progress bar show
+			zipPath = await downloadArtifact(info, downloadDir);
+			logger.success("Artifact downloaded.");
 		} catch (error) {
 			spinner.fail("Failed to download artifact.");
+			throw error;
+		}
+
+		const extractSpinner = createSpinner("Extracting artifact...").start();
+		try {
+			await extractZip(zipPath, extractDir);
+			extractSpinner.succeed("Artifact extracted.");
+		} catch (error) {
+			extractSpinner.fail("Failed to extract artifact.");
 			throw error;
 		}
 
@@ -28,8 +43,7 @@ export const run = async (url: string) => {
 		logger.dim("Press Ctrl+C to stop and cleanup.");
 
 		// Run playwright show-report
-		// We use spawn to keep it interactive and allow the user to see the output/kill it.
-		const child = spawn("npx", ["playwright", "show-report", tempDir], {
+		const child = spawn("npx", ["playwright", "show-report", extractDir], {
 			stdio: "inherit",
 			shell: true,
 		});
@@ -37,12 +51,7 @@ export const run = async (url: string) => {
 		return new Promise<void>((resolve, reject) => {
 			child.on("close", (code) => {
 				cleanup(tempDir);
-				if (code === 0) {
-					resolve();
-				} else {
-					// Playwright show-report might be killed by user, which is fine.
-					resolve();
-				}
+				resolve();
 			});
 
 			child.on("error", (err) => {
