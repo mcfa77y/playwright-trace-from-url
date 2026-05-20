@@ -54,9 +54,18 @@ export const downloadArtifact = async (
 
 		logger.info(`Downloading artifact: ${artifactName}...`);
 
+		const formatSize = (bytes: number) => {
+			if (bytes === 0) return "0 B";
+			const k = 1024;
+			const sizes = ["B", "KB", "MB", "GB"];
+			const i = Math.floor(Math.log(bytes) / Math.log(k));
+			return `${(bytes / k ** i).toFixed(2)} ${sizes[i]}`;
+		};
+
 		const progressBar = new cliProgress.SingleBar(
 			{
-				format: "Downloading | {bar} | {percentage}% | {value}/{total} Chunks",
+				format:
+					"Downloading | {bar} | {percentage}% | {formattedValue}/{formattedTotal}",
 				barCompleteChar: "\u2588",
 				barIncompleteChar: "\u2591",
 				hideCursor: true,
@@ -74,7 +83,10 @@ export const downloadArtifact = async (
 		});
 
 		const totalLength = Number.parseInt(response.headers["content-length"], 10);
-		progressBar.start(totalLength || 100, 0);
+		progressBar.start(totalLength || 100, 0, {
+			formattedValue: formatSize(0),
+			formattedTotal: formatSize(totalLength || 0),
+		});
 
 		const zipPath = path.join(destDir, `${artifactName}.zip`);
 		const writer = fs.createWriteStream(zipPath);
@@ -82,7 +94,9 @@ export const downloadArtifact = async (
 		let downloadedLength = 0;
 		response.data.on("data", (chunk: Buffer) => {
 			downloadedLength += chunk.length;
-			progressBar.update(downloadedLength);
+			progressBar.update(downloadedLength, {
+				formattedValue: formatSize(downloadedLength),
+			});
 		});
 
 		response.data.pipe(writer);
