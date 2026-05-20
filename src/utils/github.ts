@@ -65,7 +65,7 @@ export const downloadArtifact = async (
 		const progressBar = new cliProgress.SingleBar(
 			{
 				format:
-					"Downloading | {bar} | {percentage}% | {formattedValue}/{formattedTotal} | {speed}",
+					"Downloading | {bar} | {percentage}% | {formattedValue}/{formattedTotal} | {speed} | ETA: {eta}s",
 				barCompleteChar: "\u2588",
 				barIncompleteChar: "\u2591",
 				hideCursor: true,
