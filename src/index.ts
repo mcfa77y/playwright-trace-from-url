@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import figlet from "figlet";
 import { run } from "./app.js";
 import { setupCommands } from "./cli/commands.js";

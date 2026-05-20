@@ -3,6 +3,9 @@
 	"version": "1.0.0",
 	"description": "A beautiful CLI/TUI to download and view Playwright trace artifacts from GitHub Actions.",
 	"module": "src/index.ts",
+	"bin": {
+		"playwright-trace": "./src/index.ts"
+	},
 	"type": "module",
 	"scripts": {
 		"start": "bun src/index.ts",
