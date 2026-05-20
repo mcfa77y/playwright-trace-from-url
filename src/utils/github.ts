@@ -65,7 +65,7 @@ export const downloadArtifact = async (
 		const progressBar = new cliProgress.SingleBar(
 			{
 				format:
-					"Downloading | {bar} | {percentage}% | {formattedValue}/{formattedTotal}",
+					"Downloading | {bar} | {percentage}% | {formattedValue}/{formattedTotal} | {speed}",
 				barCompleteChar: "\u2588",
 				barIncompleteChar: "\u2591",
 				hideCursor: true,
@@ -83,9 +83,12 @@ export const downloadArtifact = async (
 		});
 
 		const totalLength = Number.parseInt(response.headers["content-length"], 10);
+		const startTime = Date.now();
+
 		progressBar.start(totalLength || 100, 0, {
 			formattedValue: formatSize(0),
 			formattedTotal: formatSize(totalLength || 0),
+			speed: "0 B/s",
 		});
 
 		const zipPath = path.join(destDir, `${artifactName}.zip`);
@@ -94,8 +97,13 @@ export const downloadArtifact = async (
 		let downloadedLength = 0;
 		response.data.on("data", (chunk: Buffer) => {
 			downloadedLength += chunk.length;
+			const elapsedMs = Date.now() - startTime;
+			const speedBytesPerMs = elapsedMs > 0 ? downloadedLength / elapsedMs : 0;
+			const speedBytesPerSec = speedBytesPerMs * 1000;
+
 			progressBar.update(downloadedLength, {
 				formattedValue: formatSize(downloadedLength),
+				speed: `${formatSize(speedBytesPerSec)}/s`,
 			});
 		});
 
